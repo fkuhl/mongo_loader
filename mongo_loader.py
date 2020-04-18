@@ -174,8 +174,7 @@ def store(collection, households):
     i = 0
     for h in households:
         input_id = h.id
-        ready_to_insert = json.loads(jsonpickle.encode(h))
-        mongo_id = collection.insert_one(ready_to_insert).inserted_id
+        mongo_id = collection.insert_one(h.mongoize()).inserted_id
         mongo_id_by_input_id[input_id] = str(mongo_id)
         # h passed by reference, so input Household is being mutated
         h.id = str(mongo_id)  # swap imported id for mongo. 2 Kings 5:18
@@ -218,12 +217,12 @@ def fixup_and_update(collection, households, mongo_id_by_input_id):
                     f"other {other.full_name}, no Mongo id corresp to {other.household}")
                 raise
             other.household = other_mongo
-        ready_to_insert = json.loads(jsonpickle.encode(h))
+        ready_to_insert = h.mongoize()
         if i == 0:
             log.info("ready to update")
             pprint.pprint(ready_to_insert)
-        filter = {"_id": ObjectId(h.id)}
-        result = collection.replace_one(filter, ready_to_insert)
+        criterion = {"_id": ObjectId(h.id)}
+        result = collection.replace_one(criterion, ready_to_insert)
         if i % 20 == 0:
             log.info(
                 f"{h.head.full_name} matched: {result.matched_count} replaced: {result.modified_count}")
@@ -235,6 +234,7 @@ def load_em_up(filename):
     with open(filename) as f:
         pickled = f.read()
 
+    # This works because PeriMeleon was carefully adjusted to emit jsonpickle-friendly stuff.
     unpickled = jsonpickle.decode(pickled)
     addresses = unpickled['addresses']
     households = unpickled['households']
