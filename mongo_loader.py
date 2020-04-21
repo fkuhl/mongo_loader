@@ -170,6 +170,7 @@ def index_households(households, addresses_by_imported_index, members_by_importe
         if h.address in  addresses_by_imported_index:
             h.address = addresses_by_imported_index[h.address]
         return h
+    #The conditional at the end of the comprehension is needed because one household has null head. We should catch that in a validaiton step
     households_list = [h for h in list(map(fix_household, households)) if h.head]
     #Remove comment: list comprehension with filter is an elegant way to set mansion members
     mansion_in_the_sky.others = [m for m in members_by_imported_index.values() if m.household == mansion_in_the_sky.id]
