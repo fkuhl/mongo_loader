@@ -12,16 +12,11 @@ import uuid
 import pprint
 from argparse import ArgumentParser
 
-# try:
-#     sys.path.index("/Users/fkuhl/Documents/workspace/pm_http/pm_data_types")
-# except ValueError:
-#     sys.path.append("/Users/fkuhl/Documents/workspace/pm_http/pm_data_types")
-
 from pm_data_types.member import Member, MemberStatus, Sex, MaritalStatus, Transaction, TransactionType, Service, ServiceType
 from pm_data_types.address import Address
 from pm_data_types.household import Household
 
-logging.basicConfig(filename='server.log', level=logging.DEBUG)
+logging.basicConfig(filename='log/server.log', level=logging.DEBUG)
 logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 logging.getLogger('asyncio').setLevel(logging.WARNING)
 log = logging.getLogger('HandlerLogger')
@@ -49,26 +44,24 @@ def make_mansion_in_the_sky():
     return mansion_in_the_sky
 
 
-def none_empty(s):
-    """If string s is None or empty, return None."""
-    return s if s else None
-
-
 def index_addresses(importedAddresses):
     """Return dict of Addresses by imported index."""
-    i = 0
-    index = {}
-    for a in importedAddresses:
-        edited = copy.deepcopy(a)
-        edited.address2 = none_empty(a.address2)
-        edited.country = none_empty(a.country)
-        edited.email = none_empty(a.email)
-        edited.home_phone = none_empty(a.home_phone)
-        index[a.id] = edited
-        if i % 10 == 0:
-            log.info(f"address {edited.address}, {edited.city}")
-        i += 1
-    return index
+    # i = 0
+    # index = {}
+    # for a in importedAddresses:
+    #     edited = copy.deepcopy(a)
+    #     edited.address2 = a.address2 or None
+    #     edited.country = a.country or None
+    #     edited.email = a.email or None
+    #     edited.home_phone = a.home_phone or None
+    #     index[a.id] = edited
+    #     if i % 10 == 0:
+    #         log.info(f"address {edited.address}, {edited.city}")
+    #     i += 1
+    # return index
+    #Remove comment: dict comprehensions are da bomb
+    log.info(f"indexed {len(importedAddresses)} addresses")
+    return {a.id: a or None for a in importedAddresses}
 
 
 def index_members(members, addresses_by_imported_index, mansion_in_the_sky):
@@ -77,40 +70,49 @@ def index_members(members, addresses_by_imported_index, mansion_in_the_sky):
      - Postcondition: Member structures have any temp_addresses embedded. Household index is still the imported index, not the Mongo.
      - Returns index of members.
      """
-    index = {}  # {id : Member }
-    i = 0
-    for m in members:
-        e = copy.deepcopy(m)
-        e.middle_name = none_empty(m.middle_name)
-        e.previous_family_name = none_empty(m.previous_family_name)
-        e.name_suffix = none_empty(m.name_suffix)
-        e.title = none_empty(m.title)
-        e.nickname = none_empty(m.nickname)
-        e.place_of_birth = none_empty(m.place_of_birth)
-        e.household = m.household if m.household else mansion_in_the_sky
-        if m.temp_address:
-            if m.temp_address in addresses_by_imported_index:
-                # imported integer index replaced by Address. 2 Kings 5:18
-                e.temp_address = addresses_by_imported_index[m.temp_address]
-            else:
-                e.temp_address = None
-                log.error(f"temp addr ind not known: {m.temp_address}")
-        e.spouse = none_empty(m.spouse)
-        e.divorce = none_empty(m.divorce)
-        e.father = none_empty(m.father)
-        e.mother = none_empty(m.mother)
-        e.email = none_empty(m.email)
-        e.work_email = none_empty(m.work_email)
-        e.mobile_phone = none_empty(m.mobile_phone)
-        e.work_phone = none_empty(m.work_phone)
-        e.education = none_empty(m.education)
-        e.employer = none_empty(m.employer)
-        e.baptism = none_empty(m.baptism)
-        index[m.id] = e
-        if i % 20 == 0:
-            log.info(f"member {m.full_name}")
-        i += 1
-    return index
+    # index = {}  # {id : Member }
+    # i = 0
+    # for m in members:
+    #     e = copy.deepcopy(m)
+    #     e.middle_name = m.middle_name or None
+    #     e.previous_family_name = m.previous_family_name or None
+    #     e.name_suffix = m.name_suffix or None
+    #     e.title = m.title or None
+    #     e.nickname = m.nickname or None
+    #     print(m.family_name)
+    #     e.place_of_birth = m.place_of_birth or None
+    #     e.household = m.household if m.household else mansion_in_the_sky # <== need the id here, not the object!
+    #     if m.temp_address:
+    #         if m.temp_address in addresses_by_imported_index:
+    #             # imported integer index replaced by Address. 2 Kings 5:18
+    #             e.temp_address = addresses_by_imported_index[m.temp_address]
+    #         else:
+    #             e.temp_address = None
+    #             log.error(f"temp addr ind not known: {m.temp_address}")
+    #     e.spouse = m.spouse or None
+    #     e.divorce = m.divorce or None
+    #     e.father = m.father or None
+    #     e.mother = m.mother or None
+    #     e.email = m.email or None
+    #     e.work_email = m.work_email or None
+    #     e.mobile_phone = m.mobile_phone or None
+    #     e.work_phone = m.work_phone or None
+    #     e.education = m.education or None
+    #     e.employer = m.employer or None
+    #     e.baptism = m.baptism or None
+    #     index[m.id] = e
+    #     if i % 20 == 0:
+    #         log.info(f"member {m.full_name}")
+    #     i += 1
+    # return index
+    # Remove comment: You can mutate values in a dict comprehensions also
+    log.info(f"indexed {len(members)} members")
+    def fix_member(m):
+        m.temp_address == addresses_by_imported_index[m.temp_address] if m.temp_address in addresses_by_imported_index else None
+        m.household = m.household or mansion_in_the_sky.id
+        return m
+    return {m.id: m or None for m in list(map(fix_member, members))}
+
 
 
 def index_households(households, addresses_by_imported_index, members_by_imported_index, mansion_in_the_sky):
@@ -121,42 +123,58 @@ def index_households(households, addresses_by_imported_index, members_by_importe
         Members have imported Household indexes, not in Mongo yet.
         mansion_in_the_sky has been appended to array of HouseholdDocuments.
     """
-    i = 0
-    household_docs = []  # Households
-    for h in households:
-        d = copy.deepcopy(h)
-        try:
-            d.head = members_by_imported_index[h.head]
-        except (KeyError):
-            log.error(
-                f"household {h.id}: no member imported for head {h.head}")
-            continue  # just don't transfer that one
-        if h.spouse:
-            try:
-                d.spouse = members_by_imported_index[h.spouse]
-            except (KeyError):
-                log.error(
-                    f"household {h.id}: no member imported for head {h.spouse}")
-        others = []  # Members
-        for oi in h.others:
-            try:
-                others.append(members_by_imported_index[oi])
-            except (KeyError):
-                log.error(
-                    f"household {h.id}: no member imported for other {oi}")
-        d.others = others
-        if h.address:
-            d.address = addresses_by_imported_index[h.address]
-        household_docs.append(d)
-        if i % 10 == 0:
-            log.info(f"household {d.head.full_name}")
-        i += 1
-    for member in members_by_imported_index.values():
-        if member.household == mansion_in_the_sky.id:
-            mansion_in_the_sky.others.append(member)
-            log.info(f"placing {member.full_name} in mansion_in_the_sky")
-    household_docs.append(mansion_in_the_sky)
-    return household_docs
+    # i = 0
+    # household_docs = []  # Households
+    # for h in households:
+    #     d = copy.deepcopy(h)
+    #     try:
+    #         d.head = members_by_imported_index[h.head]
+    #     except (KeyError):
+    #         log.error(
+    #             f"household {h.id}: no member imported for head {h.head}")
+    #         continue  # just don't transfer that one
+    #     if h.spouse:
+    #         try:
+    #             d.spouse = members_by_imported_index[h.spouse]
+    #         except (KeyError):
+    #             log.error(
+    #                 f"household {h.id}: no member imported for spouse {h.spouse}")
+    #     others = []  # Members
+    #     for oi in h.others:
+    #         try:
+    #             others.append(members_by_imported_index[oi])
+    #         except (KeyError):
+    #             log.error(
+    #                 f"household {h.id}: no member imported for other {oi}")
+    #     d.others = others
+    #     if h.address:
+    #         d.address = addresses_by_imported_index[h.address]
+    #     household_docs.append(d)
+    #     if i % 10 == 0:
+    #         log.info(f"household {d.head.full_name}")
+    #     i += 1
+    # for member in members_by_imported_index.values():
+    #     if member.household == mansion_in_the_sky.id:
+    #         mansion_in_the_sky.others.append(member)
+    #         log.info(f"placing {member.full_name} in mansion_in_the_sky")
+    # household_docs.append(mansion_in_the_sky)
+    # return household_docs
+    log.info(f"indexed {len(households)} households")
+    def fix_household(h):
+        if h.head is not None and h.head in members_by_imported_index: h.head = members_by_imported_index[h.head]
+        if not h.head:
+            print('Household with no head\n', h)
+        if h.spouse in members_by_imported_index: h.spouse =  members_by_imported_index[h.spouse]
+        filtered_indexes = filter(lambda idx: idx in members_by_imported_index, h.others)
+        h.others = list(map(lambda idx: members_by_imported_index[idx], filtered_indexes))
+        if h.address in  addresses_by_imported_index:
+            h.address = addresses_by_imported_index[h.address]
+        return h
+    households_list = [h for h in list(map(fix_household, households)) if h.head]
+    #Remove comment: list comprehension with filter is an elegant way to set mansion members
+    mansion_in_the_sky.others = [m for m in members_by_imported_index.values() if m.household == mansion_in_the_sky.id]
+    households_list.append(mansion_in_the_sky)
+    return households_list
 
 
 def store(collection, households):
@@ -192,31 +210,49 @@ def fixup_and_update(collection, households, mongo_id_by_input_id):
     - Postcondition: households are stored in final form.
     - Returns: no return; household list has been mutated
     """
+    # i = 0
+    # for h in households:
+    #     try:
+    #         head_mongo = mongo_id_by_input_id[h.head.household]
+    #     except (KeyError):
+    #         log.error(
+    #             f"head of {h.head.full_name}, no Mongo id corresp to {h.head.household}")
+    #         raise
+    #     h.head.household = head_mongo
+    #     if h.spouse:
+    #         try:
+    #             spouse_mongo = mongo_id_by_input_id[h.spouse.household]
+    #         except (KeyError):
+    #             log.error(
+    #                 f"spouse of {h.spouse.full_name}, no Mongo id corresp to {h.spouse.household}")
+    #             raise
+    #         h.spouse.household = spouse_mongo
+    #     for other in h.others:
+    #         try:
+    #             other_mongo = mongo_id_by_input_id[other.household]
+    #         except (KeyError):
+    #             log.error(
+    #                 f"other {other.full_name}, no Mongo id corresp to {other.household}")
+    #             raise
+    #         other.household = other_mongo
+    #     ready_to_insert = h.mongoize()
+    #     if i == 0:
+    #         log.info("ready to update")
+    #         pprint.pprint(ready_to_insert)
+    #     criterion = {"_id": ObjectId(h.id)}
+    #     result = collection.replace_one(criterion, ready_to_insert)
+    #     if i % 20 == 0:
+    #         log.info(
+    #             f"{h.head.full_name} matched: {result.matched_count} replaced: {result.modified_count}")
+    #     i += 1
+    def fix_household(h):
+        if h.head.household in mongo_id_by_input_id: h.head.household = mongo_id_by_input_id[h.head.household]
+        if h.spouse and h.spouse.household in mongo_id_by_input_id: h.spouse.household = mongo_id_by_input_id[h.spouse.household]
+        for m in h.others: m.household = mongo_id_by_input_id[m.household]
+        return h
+
     i = 0
-    for h in households:
-        try:
-            head_mongo = mongo_id_by_input_id[h.head.household]
-        except (KeyError):
-            log.error(
-                f"head of {h.head.full_name}, no Mongo id corresp to {h.head.household}")
-            raise
-        h.head.household = head_mongo
-        if h.spouse:
-            try:
-                spouse_mongo = mongo_id_by_input_id[h.spouse.household]
-            except (KeyError):
-                log.error(
-                    f"spouse of {h.spouse.full_name}, no Mongo id corresp to {h.spouse.household}")
-                raise
-            h.spouse.household = spouse_mongo
-        for other in h.others:
-            try:
-                other_mongo = mongo_id_by_input_id[other.household]
-            except (KeyError):
-                log.error(
-                    f"other {other.full_name}, no Mongo id corresp to {other.household}")
-                raise
-            other.household = other_mongo
+    for h in map(fix_household, households):
         ready_to_insert = h.mongoize()
         if i == 0:
             log.info("ready to update")
@@ -226,7 +262,7 @@ def fixup_and_update(collection, households, mongo_id_by_input_id):
         if i % 20 == 0:
             log.info(
                 f"{h.head.full_name} matched: {result.matched_count} replaced: {result.modified_count}")
-        i += 1
+        i+= 1
 
 
 def load_em_up(filename):
