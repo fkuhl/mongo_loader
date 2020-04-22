@@ -119,7 +119,7 @@ def index_members(members, addresses_by_imported_index, mansion_in_the_sky):
         m.temp_address == addresses_by_imported_index[m.temp_address] if m.temp_address in addresses_by_imported_index else None
         m.household = m.household or mansion_in_the_sky.id
         return m
-    return {m.id: m or None for m in list(map(fix_member, members))}
+    return {m.id: m or None for m in map(fix_member, members)}
 
 
 
@@ -274,7 +274,7 @@ def fixup_and_update(collection, households, mongo_id_by_input_id):
         i+= 1
 
 
-def load_em_up(filename):
+def load_em_up(filename, dbhost):
     #filename = "/Users/fkuhl/Desktop/members-py.json"
     with open(filename) as f:
         pickled = f.read()
@@ -294,7 +294,7 @@ def load_em_up(filename):
         members, addresses_by_imported_index, mansion_in_the_sky)
     households_ready_to_store = index_households(
         households, addresses_by_imported_index, members_by_imported_index, mansion_in_the_sky)
-    client = MongoClient(host="localhost", port=27017)
+    client = MongoClient(host=dbhost, port=27017)
     db = client["PeriMeleon"]
     collection = db["households"]
     mongo_id_by_input_id = store(collection, households_ready_to_store)
@@ -311,6 +311,8 @@ def parse_args(args=None):
         description="Load data from elder PeriMeleon into MongoDB")
     parser.add_argument('-d', '--dir', default='.',
                         help="Directory containing data")
+    parser.add_argument('-db', '--dbhost', default='localhost',
+                        help="MongoDB server hostname")
     parser.add_argument("filename", type=str, help="data file")
     return parser.parse_args()
 
@@ -318,7 +320,7 @@ def parse_args(args=None):
 def main(args=None):
     args = parse_args(args)
     os.chdir(args.dir)
-    load_em_up(args.filename)
+    load_em_up(args.filename, args.dbhost)
 
 
 if __name__ == '__main__':
