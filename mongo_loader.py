@@ -43,6 +43,14 @@ def make_mansion_in_the_sky():
     mansion_in_the_sky.id = mansion_in_the_sky_temp_id
     return mansion_in_the_sky
 
+# Remove comment. Instead of wrapping an expression with this function,
+# use a logical or. 
+# so instead of: foo = none_empty(bar),
+# use: foo = bar or None
+# def none_empty(s):
+#     """If string s is None or empty, return None."""
+#     return s if s else None
+
 
 def index_addresses(importedAddresses):
     """Return dict of Addresses by imported index."""
