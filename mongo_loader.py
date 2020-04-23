@@ -22,7 +22,9 @@ logging.getLogger('asyncio').setLevel(logging.WARNING)
 log = logging.getLogger('HandlerLogger')
 pp = pprint.PrettyPrinter(indent=4)
 
-
+### ==> I see you changeed the enum value in status from DEAD to DIED, so the comments here should
+# be changed as well. But I still prefer DECEASED. LOnger, I know, but DIED still sounds cold, even if
+# only devs and admins will see it.
 def make_mansion_in_the_sky():
     """DEAD members must still belong to a household, to be included in the denormalized data.
     As DEAD members are imported they are added to mansionInTheSky.
@@ -70,6 +72,13 @@ def validate_members(members, addresses_by_imported_index):
     In keeping with the script-like nature of this program, we just log errors.
     """
     # There is no functional form of this (that I could find) that is shorter, or clearer.
+    ### ==> Because we want to execute a side-effect on each record, there is no obvious functional form that works.
+    # However, a possible way to do this with a functional approach would be:
+    #
+    # log_messages = reduce(some_func, members)
+    # # where some_func returns a string which concatenates the log messages generated for all problematic records
+    # log.error(log_messages)
+    # I don't think this is warranted in this situation, but that pattern may be useful in the future
     for m in members:
         if m.temp_address and not m.temp_address in addresses_by_imported_index:
             log.error(
@@ -92,6 +101,7 @@ def index_members(members, addresses_by_imported_index, mansion_in_the_sky):
         # Oops! good catch!
         m.household = m.household or mansion_in_the_sky.id
         return m
+    ## ==> I think we don't need the "or None" guard, which I added in error
     return {m.id: m or None for m in map(fix_member, members)}
 
 
@@ -136,6 +146,7 @@ def index_households(households, addresses_by_imported_index, members_by_importe
         if h.address in addresses_by_imported_index:
             h.address = addresses_by_imported_index[h.address]
         return h
+    ## ==> You can remove this comment now
     # The conditional at the end of the comprehension is needed because one household has null head. We should catch that in a validaiton step
     households_list = [h for h in list(
         map(fix_household, households)) if h.head]
@@ -179,6 +190,7 @@ def fixup_and_update(mongo_collection, households, mongo_id_by_input_id):
     - Returns: no return; household list has been mutated
     """
     def fix_household(h):
+        ## ==> I htink we don't need the "if" conditionals here, because data is validated
         if h.head.household in mongo_id_by_input_id:
             h.head.household = mongo_id_by_input_id[h.head.household]
         if h.spouse and h.spouse.household in mongo_id_by_input_id:
@@ -227,6 +239,8 @@ def load_em_up(filename, dbhost):
         households, addresses_by_imported_index, members_by_imported_index, mansion_in_the_sky)
 
     client = MongoClient(host=dbhost, port=27017)
+    ## ==> From the speak now or forver hold your peace department: I wonder of lowe case database name would be better. NO a big deal,
+    # it just helps to not have to remember how we represented it. Not sure what the usual practice is, if there is one.
     db = client["PeriMeleon"]
     collection = db["households"]
     mongo_id_by_input_id = store(collection, households_ready_to_store)
