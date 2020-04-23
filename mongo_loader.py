@@ -43,150 +43,109 @@ def make_mansion_in_the_sky():
     mansion_in_the_sky.id = mansion_in_the_sky_temp_id
     return mansion_in_the_sky
 
-# Remove comment. Instead of wrapping an expression with this function,
-# use a logical or. 
-# so instead of: foo = none_empty(bar),
-# use: foo = bar or None
-# def none_empty(s):
-#     """If string s is None or empty, return None."""
-#     return s if s else None
-
 
 def index_addresses(importedAddresses):
-    """Return dict of Addresses by imported index."""
-    # i = 0
-    # index = {}
-    # for a in importedAddresses:
+    """Return dict of Address instances by imported index."""
+    # This editing was a premature optimization that might as well be removed.
+    # (I'll remove this stuff after these changes are merged with master.)
+    # When the Swift JSON encoder wncounters a nil property, it omits the property
+    # from the JSON-encoded string. So I thought, if I could convert the many empty
+    # strings in the PM data to nils, the JSON encoding would be much shorter.
+    # But the Python JSON encoder represents Nones as "null", which is probably
+    # more correct, but doesn't shorten the encoded string. So this "optimization"
+    # was premature. And we all know what Knuth said about those.
     #     edited = copy.deepcopy(a)
     #     edited.address2 = a.address2 or None
     #     edited.country = a.country or None
     #     edited.email = a.email or None
     #     edited.home_phone = a.home_phone or None
     #     index[a.id] = edited
-    #     if i % 10 == 0:
-    #         log.info(f"address {edited.address}, {edited.city}")
-    #     i += 1
-    # return index
-    #Remove comment: dict comprehensions are da bomb
     log.info(f"indexed {len(importedAddresses)} addresses")
-    return {a.id: a or None for a in importedAddresses}
+    return {a.id: a for a in importedAddresses}
+
+
+def validate_members(members, addresses_by_imported_index):
+    """
+    Ensure that any temp_address id's are known.
+    In keeping with the script-like nature of this program, we just log errors.
+    """
+    # There is no functional form of this (that I could find) that is shorter, or clearer.
+    for m in members:
+        if m.temp_address and not m.temp_address in addresses_by_imported_index:
+            log.error(
+                f"member {m.head.full_name} ({m.id}) had unk temp address {m.temp_address}")
 
 
 def index_members(members, addresses_by_imported_index, mansion_in_the_sky):
-    """Create collection of Member structs indexed by member's imported index.
+    """Create collection of Member instances indexed by member's imported index.
      - Precondition: Addresses have been indexed, i.e., index_addresses has been executed.
-     - Postcondition: Member structures have any temp_addresses embedded. Household index is still the imported index, not the Mongo.
-     - Returns index of members.
+     - Postcondition: Member structures have any temp_addresses embedded. 
+       Household index is still the imported index, not the Mongo.
+     - Returns index of members by imported index.
      """
-    # index = {}  # {id : Member }
-    # i = 0
-    # for m in members:
-    #     e = copy.deepcopy(m)
-    #     e.middle_name = m.middle_name or None
-    #     e.previous_family_name = m.previous_family_name or None
-    #     e.name_suffix = m.name_suffix or None
-    #     e.title = m.title or None
-    #     e.nickname = m.nickname or None
-    #     print(m.family_name)
-    #     e.place_of_birth = m.place_of_birth or None
-    #     e.household = m.household if m.household else mansion_in_the_sky # <== need the id here, not the object!
-    #     if m.temp_address:
-    #         if m.temp_address in addresses_by_imported_index:
-    #             # imported integer index replaced by Address. 2 Kings 5:18
-    #             e.temp_address = addresses_by_imported_index[m.temp_address]
-    #         else:
-    #             e.temp_address = None
-    #             log.error(f"temp addr ind not known: {m.temp_address}")
-    #     e.spouse = m.spouse or None
-    #     e.divorce = m.divorce or None
-    #     e.father = m.father or None
-    #     e.mother = m.mother or None
-    #     e.email = m.email or None
-    #     e.work_email = m.work_email or None
-    #     e.mobile_phone = m.mobile_phone or None
-    #     e.work_phone = m.work_phone or None
-    #     e.education = m.education or None
-    #     e.employer = m.employer or None
-    #     e.baptism = m.baptism or None
-    #     index[m.id] = e
-    #     if i % 20 == 0:
-    #         log.info(f"member {m.full_name}")
-    #     i += 1
-    # return index
-    # Remove comment: You can mutate values in a dict comprehensions also
     log.info(f"indexed {len(members)} members")
+
     def fix_member(m):
-        m.temp_address == addresses_by_imported_index[m.temp_address] if m.temp_address in addresses_by_imported_index else None
+        # imported integer index replaced by Address. 2 Kings 5:18
+        m.temp_address == addresses_by_imported_index[
+            m.temp_address] if m.temp_address in addresses_by_imported_index else None
+        # Oops! good catch!
         m.household = m.household or mansion_in_the_sky.id
         return m
     return {m.id: m or None for m in map(fix_member, members)}
 
 
+def validate_households(households, addresses_by_imported_index, members_by_imported_index):
+    """Check integrity of member and address references."""
+    for h in households:
+        if not h.head:
+            log.error(f"household {h.id} has no head.")
+        else:
+            if not h.head in members_by_imported_index:
+                log.error(f"household {h.id} has unk head {h.head}")
+        if h.spouse and not h.spouse in members_by_imported_index:
+            log.error(f"household {h.id} has unk spouse {h.spouse}")
+        for other in h.others:
+            if other not in members_by_imported_index:
+                log.error(f"household {h.id} has unk other {other}")
+        if h.address and not h.address in addresses_by_imported_index:
+            log.error(f"household {h.id} has unk addr {h.address}")
+
 
 def index_households(households, addresses_by_imported_index, members_by_imported_index, mansion_in_the_sky):
     """
-    Create collection of Household objects indexed by household's imported index. Household objs are ready to be added to Mongo.
+    Create list of Household objects indexed by household's imported index. 
+       Household objs are ready to be added to Mongo.
      - Precondition: Members have been indexed, i.e., index_members has been executed.
      - Postcondition: Household objs created, with Members and Addresses embedded.
         Members have imported Household indexes, not in Mongo yet.
-        mansion_in_the_sky has been appended to array of HouseholdDocuments.
+        mansion_in_the_sky has been appended to list of Households.
+     - Returns list of Households
     """
-    # i = 0
-    # household_docs = []  # Households
-    # for h in households:
-    #     d = copy.deepcopy(h)
-    #     try:
-    #         d.head = members_by_imported_index[h.head]
-    #     except (KeyError):
-    #         log.error(
-    #             f"household {h.id}: no member imported for head {h.head}")
-    #         continue  # just don't transfer that one
-    #     if h.spouse:
-    #         try:
-    #             d.spouse = members_by_imported_index[h.spouse]
-    #         except (KeyError):
-    #             log.error(
-    #                 f"household {h.id}: no member imported for spouse {h.spouse}")
-    #     others = []  # Members
-    #     for oi in h.others:
-    #         try:
-    #             others.append(members_by_imported_index[oi])
-    #         except (KeyError):
-    #             log.error(
-    #                 f"household {h.id}: no member imported for other {oi}")
-    #     d.others = others
-    #     if h.address:
-    #         d.address = addresses_by_imported_index[h.address]
-    #     household_docs.append(d)
-    #     if i % 10 == 0:
-    #         log.info(f"household {d.head.full_name}")
-    #     i += 1
-    # for member in members_by_imported_index.values():
-    #     if member.household == mansion_in_the_sky.id:
-    #         mansion_in_the_sky.others.append(member)
-    #         log.info(f"placing {member.full_name} in mansion_in_the_sky")
-    # household_docs.append(mansion_in_the_sky)
-    # return household_docs
     log.info(f"indexed {len(households)} households")
+
     def fix_household(h):
-        if h.head is not None and h.head in members_by_imported_index: h.head = members_by_imported_index[h.head]
-        if not h.head:
-            print('Household with no head\n', h)
-        if h.spouse in members_by_imported_index: h.spouse =  members_by_imported_index[h.spouse]
-        filtered_indexes = filter(lambda idx: idx in members_by_imported_index, h.others)
-        h.others = list(map(lambda idx: members_by_imported_index[idx], filtered_indexes))
-        if h.address in  addresses_by_imported_index:
+        if h.head is not None and h.head in members_by_imported_index:
+            h.head = members_by_imported_index[h.head]
+        if h.spouse in members_by_imported_index:
+            h.spouse = members_by_imported_index[h.spouse]
+        others_in_index = filter(
+            lambda idx: idx in members_by_imported_index, h.others)
+        h.others = list(
+            map(lambda idx: members_by_imported_index[idx], others_in_index))
+        if h.address in addresses_by_imported_index:
             h.address = addresses_by_imported_index[h.address]
         return h
-    #The conditional at the end of the comprehension is needed because one household has null head. We should catch that in a validaiton step
-    households_list = [h for h in list(map(fix_household, households)) if h.head]
-    #Remove comment: list comprehension with filter is an elegant way to set mansion members
-    mansion_in_the_sky.others = [m for m in members_by_imported_index.values() if m.household == mansion_in_the_sky.id]
+    # The conditional at the end of the comprehension is needed because one household has null head. We should catch that in a validaiton step
+    households_list = [h for h in list(
+        map(fix_household, households)) if h.head]
+    mansion_in_the_sky.others = [m for m in members_by_imported_index.values()
+                                 if m.household == mansion_in_the_sky.id]
     households_list.append(mansion_in_the_sky)
     return households_list
 
 
-def store(collection, households):
+def store(mongo_collection, households):
     """
     Store preliminary version of households in Mongo, creating an index
     from imported household id to MongDB id.
@@ -194,14 +153,14 @@ def store(collection, households):
     """
     mongo_id_by_input_id = {}  # {input id : mongo id <as string>}
     try:
-        collection.drop()
+        mongo_collection.drop()
     except:
         log.error(f"drop failed, {sys.exc_info()[0]}")
         return
     i = 0
     for h in households:
         input_id = h.id
-        mongo_id = collection.insert_one(h.mongoize()).inserted_id
+        mongo_id = mongo_collection.insert_one(h.mongoize()).inserted_id
         mongo_id_by_input_id[input_id] = str(mongo_id)
         # h passed by reference, so input Household is being mutated
         h.id = str(mongo_id)  # swap imported id for mongo. 2 Kings 5:18
@@ -211,7 +170,7 @@ def store(collection, households):
     return mongo_id_by_input_id
 
 
-def fixup_and_update(collection, households, mongo_id_by_input_id):
+def fixup_and_update(mongo_collection, households, mongo_id_by_input_id):
     """
     Fixup households: In each Member, replace the imported Household index
         with the Mongo id.
@@ -219,45 +178,13 @@ def fixup_and_update(collection, households, mongo_id_by_input_id):
     - Postcondition: households are stored in final form.
     - Returns: no return; household list has been mutated
     """
-    # i = 0
-    # for h in households:
-    #     try:
-    #         head_mongo = mongo_id_by_input_id[h.head.household]
-    #     except (KeyError):
-    #         log.error(
-    #             f"head of {h.head.full_name}, no Mongo id corresp to {h.head.household}")
-    #         raise
-    #     h.head.household = head_mongo
-    #     if h.spouse:
-    #         try:
-    #             spouse_mongo = mongo_id_by_input_id[h.spouse.household]
-    #         except (KeyError):
-    #             log.error(
-    #                 f"spouse of {h.spouse.full_name}, no Mongo id corresp to {h.spouse.household}")
-    #             raise
-    #         h.spouse.household = spouse_mongo
-    #     for other in h.others:
-    #         try:
-    #             other_mongo = mongo_id_by_input_id[other.household]
-    #         except (KeyError):
-    #             log.error(
-    #                 f"other {other.full_name}, no Mongo id corresp to {other.household}")
-    #             raise
-    #         other.household = other_mongo
-    #     ready_to_insert = h.mongoize()
-    #     if i == 0:
-    #         log.info("ready to update")
-    #         pprint.pprint(ready_to_insert)
-    #     criterion = {"_id": ObjectId(h.id)}
-    #     result = collection.replace_one(criterion, ready_to_insert)
-    #     if i % 20 == 0:
-    #         log.info(
-    #             f"{h.head.full_name} matched: {result.matched_count} replaced: {result.modified_count}")
-    #     i += 1
     def fix_household(h):
-        if h.head.household in mongo_id_by_input_id: h.head.household = mongo_id_by_input_id[h.head.household]
-        if h.spouse and h.spouse.household in mongo_id_by_input_id: h.spouse.household = mongo_id_by_input_id[h.spouse.household]
-        for m in h.others: m.household = mongo_id_by_input_id[m.household]
+        if h.head.household in mongo_id_by_input_id:
+            h.head.household = mongo_id_by_input_id[h.head.household]
+        if h.spouse and h.spouse.household in mongo_id_by_input_id:
+            h.spouse.household = mongo_id_by_input_id[h.spouse.household]
+        for m in h.others:
+            m.household = mongo_id_by_input_id[m.household]
         return h
 
     i = 0
@@ -267,11 +194,11 @@ def fixup_and_update(collection, households, mongo_id_by_input_id):
             log.info("ready to update")
             pprint.pprint(ready_to_insert)
         criterion = {"_id": ObjectId(h.id)}
-        result = collection.replace_one(criterion, ready_to_insert)
+        result = mongo_collection.replace_one(criterion, ready_to_insert)
         if i % 20 == 0:
             log.info(
                 f"{h.head.full_name} matched: {result.matched_count} replaced: {result.modified_count}")
-        i+= 1
+        i += 1
 
 
 def load_em_up(filename, dbhost):
@@ -286,21 +213,34 @@ def load_em_up(filename, dbhost):
     members = unpickled['members']
     log.info(
         f"addr: {len(addresses)} households: {len(households)} members: {len(members)}")
-    log.info(
-        f"p c: {addresses[0].postal_code} h: {households[0].spouse} m: {members[0].date_of_birth}")
+
     addresses_by_imported_index = index_addresses(addresses)
+
     mansion_in_the_sky = make_mansion_in_the_sky()
+    validate_members(members, addresses_by_imported_index)
     members_by_imported_index = index_members(
         members, addresses_by_imported_index, mansion_in_the_sky)
+
+    validate_households(
+        households, addresses_by_imported_index, members_by_imported_index)
     households_ready_to_store = index_households(
         households, addresses_by_imported_index, members_by_imported_index, mansion_in_the_sky)
+
     client = MongoClient(host=dbhost, port=27017)
     db = client["PeriMeleon"]
     collection = db["households"]
     mongo_id_by_input_id = store(collection, households_ready_to_store)
     log.info(
         f"collection has {collection.estimated_document_count()} households")
+
     log.info(f"first household id: {households_ready_to_store[0].id}")
+    log.info(f"hh: {households_ready_to_store[0]}")
+    log.info(f"hh: {households_ready_to_store[1]}")
+    log.info(f"hh: {households_ready_to_store[2]}")
+    log.info(f"mem: {households_ready_to_store[0].head}")
+    log.info(f"mem: {households_ready_to_store[1].head}")
+    log.info(f"mem: {households_ready_to_store[2].head}")
+    log.info(f"mem: {households_ready_to_store[3].head}")
     fixup_and_update(collection, households_ready_to_store,
                      mongo_id_by_input_id)
     log.info("And we're done.")
