@@ -15,6 +15,7 @@ from argparse import ArgumentParser
 from pm_data_types.member import Member, MemberStatus, Sex, MaritalStatus, Transaction, TransactionType, Service, ServiceType
 from pm_data_types.address import Address
 from pm_data_types.household import Household
+from pm_data_types.data_common import db_name, collection_name
 
 logging.basicConfig(filename='log/server.log', level=logging.DEBUG)
 logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
@@ -22,9 +23,7 @@ logging.getLogger('asyncio').setLevel(logging.WARNING)
 log = logging.getLogger('HandlerLogger')
 pp = pprint.PrettyPrinter(indent=4)
 
-### ==> I see you changeed the enum value in status from DEAD to DIED, so the comments here should
-# be changed as well. But I still prefer DECEASED. LOnger, I know, but DIED still sounds cold, even if
-# only devs and admins will see it.
+
 def make_mansion_in_the_sky():
     """DEAD members must still belong to a household, to be included in the denormalized data.
     As DEAD members are imported they are added to mansionInTheSky.
@@ -48,20 +47,6 @@ def make_mansion_in_the_sky():
 
 def index_addresses(importedAddresses):
     """Return dict of Address instances by imported index."""
-    # This editing was a premature optimization that might as well be removed.
-    # (I'll remove this stuff after these changes are merged with master.)
-    # When the Swift JSON encoder wncounters a nil property, it omits the property
-    # from the JSON-encoded string. So I thought, if I could convert the many empty
-    # strings in the PM data to nils, the JSON encoding would be much shorter.
-    # But the Python JSON encoder represents Nones as "null", which is probably
-    # more correct, but doesn't shorten the encoded string. So this "optimization"
-    # was premature. And we all know what Knuth said about those.
-    #     edited = copy.deepcopy(a)
-    #     edited.address2 = a.address2 or None
-    #     edited.country = a.country or None
-    #     edited.email = a.email or None
-    #     edited.home_phone = a.home_phone or None
-    #     index[a.id] = edited
     log.info(f"indexed {len(importedAddresses)} addresses")
     return {a.id: a for a in importedAddresses}
 
@@ -71,14 +56,6 @@ def validate_members(members, addresses_by_imported_index):
     Ensure that any temp_address id's are known.
     In keeping with the script-like nature of this program, we just log errors.
     """
-    # There is no functional form of this (that I could find) that is shorter, or clearer.
-    ### ==> Because we want to execute a side-effect on each record, there is no obvious functional form that works.
-    # However, a possible way to do this with a functional approach would be:
-    #
-    # log_messages = reduce(some_func, members)
-    # # where some_func returns a string which concatenates the log messages generated for all problematic records
-    # log.error(log_messages)
-    # I don't think this is warranted in this situation, but that pattern may be useful in the future
     for m in members:
         if m.temp_address and not m.temp_address in addresses_by_imported_index:
             log.error(
@@ -98,11 +75,9 @@ def index_members(members, addresses_by_imported_index, mansion_in_the_sky):
         # imported integer index replaced by Address. 2 Kings 5:18
         m.temp_address == addresses_by_imported_index[
             m.temp_address] if m.temp_address in addresses_by_imported_index else None
-        # Oops! good catch!
         m.household = m.household or mansion_in_the_sky.id
         return m
-    ## ==> I think we don't need the "or None" guard, which I added in error
-    return {m.id: m or None for m in map(fix_member, members)}
+    return {m.id: m for m in map(fix_member, members)}
 
 
 def validate_households(households, addresses_by_imported_index, members_by_imported_index):
@@ -146,7 +121,6 @@ def index_households(households, addresses_by_imported_index, members_by_importe
         if h.address in addresses_by_imported_index:
             h.address = addresses_by_imported_index[h.address]
         return h
-    ## ==> You can remove this comment now
     # The conditional at the end of the comprehension is needed because one household has null head. We should catch that in a validaiton step
     households_list = [h for h in list(
         map(fix_household, households)) if h.head]
@@ -173,7 +147,6 @@ def store(mongo_collection, households):
         input_id = h.id
         mongo_id = mongo_collection.insert_one(h.mongoize()).inserted_id
         mongo_id_by_input_id[input_id] = str(mongo_id)
-        # h passed by reference, so input Household is being mutated
         h.id = str(mongo_id)  # swap imported id for mongo. 2 Kings 5:18
         if i % 20 == 0:
             log.info(f"imported id {input_id} stored as {str(mongo_id)}")
@@ -186,14 +159,13 @@ def fixup_and_update(mongo_collection, households, mongo_id_by_input_id):
     Fixup households: In each Member, replace the imported Household index
         with the Mongo id.
     - Precondition: mongo_id_by_input_id is populated.
+                    validate_households() has been run, so indexes known to be valid.
     - Postcondition: households are stored in final form.
     - Returns: no return; household list has been mutated
     """
     def fix_household(h):
-        ## ==> I htink we don't need the "if" conditionals here, because data is validated
-        if h.head.household in mongo_id_by_input_id:
-            h.head.household = mongo_id_by_input_id[h.head.household]
-        if h.spouse and h.spouse.household in mongo_id_by_input_id:
+        h.head.household = mongo_id_by_input_id[h.head.household]
+        if h.spouse:
             h.spouse.household = mongo_id_by_input_id[h.spouse.household]
         for m in h.others:
             m.household = mongo_id_by_input_id[m.household]
@@ -214,7 +186,6 @@ def fixup_and_update(mongo_collection, households, mongo_id_by_input_id):
 
 
 def load_em_up(filename, dbhost):
-    #filename = "/Users/fkuhl/Desktop/members-py.json"
     with open(filename) as f:
         pickled = f.read()
 
@@ -239,10 +210,8 @@ def load_em_up(filename, dbhost):
         households, addresses_by_imported_index, members_by_imported_index, mansion_in_the_sky)
 
     client = MongoClient(host=dbhost, port=27017)
-    ## ==> From the speak now or forver hold your peace department: I wonder of lowe case database name would be better. NO a big deal,
-    # it just helps to not have to remember how we represented it. Not sure what the usual practice is, if there is one.
-    db = client["PeriMeleon"]
-    collection = db["households"]
+    db = client[db_name]
+    collection = db[collection_name]
     mongo_id_by_input_id = store(collection, households_ready_to_store)
     log.info(
         f"collection has {collection.estimated_document_count()} households")
